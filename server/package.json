@@ -1,0 +1,26 @@
+{
+  "name": "server",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@distube/ytdl-core": "^4.16.12",
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.3",
+    "express": "^5.2.1",
+    "mongodb": "^7.6.0",
+    "play-dl": "^1.9.7",
+    "youtube-ext": "^1.1.25",
+    "yt-search": "^2.13.1",
+    "yt-stream": "^1.7.4",
+    "ytdl-core-enhanced": "^2.3.0",
+    "ytmusic-api": "^5.3.1"
+  }
+}
