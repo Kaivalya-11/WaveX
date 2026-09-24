@@ -3,6 +3,7 @@ import { Heart, HeartOff, DownloadCloud, Shuffle, SkipBack, SkipForward, Play, P
 import { usePlayer } from '../context/PlayerContext';
 import { useNotification } from '../context/NotificationContext';
 import { usePlaylists } from '../context/PlaylistContext';
+import { API_BASE_URL } from '../services/api';
 import AddToPlaylistModal from './AddToPlaylistModal';
 
 function formatTime(s) {
@@ -85,7 +86,7 @@ export default function PlayerBar({ activeView, setActiveView, activePlaylist, s
                 <button disabled={isDownloading} onClick={async (e) => {
                   e.preventDefault(); if (isDownloading) return; setIsDownloading(true);
                   try {
-                    const downloadUrl = `http://localhost:5000/api/download?videoId=${currentTrack.id}&title=${encodeURIComponent(currentTrack.title)}`;
+                    const downloadUrl = `${API_BASE_URL}/api/download?videoId=${currentTrack.id}&title=${encodeURIComponent(currentTrack.title)}`;
                     const response = await fetch(downloadUrl); const blob = await response.blob();
                     const blobUrl = window.URL.createObjectURL(blob);
                     const link = document.createElement('a'); link.href = blobUrl;
@@ -224,7 +225,7 @@ export default function PlayerBar({ activeView, setActiveView, activePlaylist, s
         <button disabled={isDownloading} onClick={async (e) => {
           e.preventDefault(); if (isDownloading) return; setIsDownloading(true);
           try {
-            const downloadUrl = `http://localhost:5000/api/download?videoId=${currentTrack.id}&title=${encodeURIComponent(currentTrack.title)}`;
+            const downloadUrl = `${API_BASE_URL}/api/download?videoId=${currentTrack.id}&title=${encodeURIComponent(currentTrack.title)}`;
             const response = await fetch(downloadUrl); const blob = await response.blob();
             const blobUrl = window.URL.createObjectURL(blob);
             const link = document.createElement('a'); link.href = blobUrl;

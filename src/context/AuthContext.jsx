@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth, loginWithGoogle } from "../services/firebase";
+import { API_BASE_URL } from "../services/api";
 
 const AuthContext = createContext();
 
@@ -17,7 +18,7 @@ export function AuthProvider({ children }) {
       
       if (user) {
         try {
-          const res = await fetch('http://localhost:5000/api/users', {
+          const res = await fetch(`${API_BASE_URL}/api/users`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

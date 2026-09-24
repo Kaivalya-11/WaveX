@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useAuth } from './AuthContext';
 import { useNotification } from './NotificationContext';
+import { API_BASE_URL } from '../services/api';
 
 const PlaylistContext = createContext();
 
@@ -29,8 +30,8 @@ export function PlaylistProvider({ children }) {
     setLoading(true);
     try {
       const [plRes, dlRes] = await Promise.all([
-        fetch(`http://localhost:5000/api/playlists?userId=${currentUser.uid}`),
-        fetch(`http://localhost:5000/api/downloads?userId=${currentUser.uid}`)
+        fetch(`${API_BASE_URL}/api/playlists?userId=${currentUser.uid}`),
+        fetch(`${API_BASE_URL}/api/downloads?userId=${currentUser.uid}`)
       ]);
       const plData = await plRes.json();
       const dlData = await dlRes.json();
@@ -57,7 +58,7 @@ export function PlaylistProvider({ children }) {
 
   const addTrack = async (playlistId, track) => {
     try {
-      const res = await fetch(`http://localhost:5000/api/playlists/${playlistId}/tracks`, {
+      const res = await fetch(`${API_BASE_URL}/api/playlists/${playlistId}/tracks`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ track })
@@ -75,7 +76,7 @@ export function PlaylistProvider({ children }) {
   const createPlaylist = async (name) => {
     if (!currentUser) return;
     try {
-      const res = await fetch(`http://localhost:5000/api/playlists`, {
+      const res = await fetch(`${API_BASE_URL}/api/playlists`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: currentUser.uid, name })
@@ -94,7 +95,7 @@ export function PlaylistProvider({ children }) {
 
   const deletePlaylist = async (playlistId) => {
     try {
-      const res = await fetch(`http://localhost:5000/api/playlists/${playlistId}`, {
+      const res = await fetch(`${API_BASE_URL}/api/playlists/${playlistId}`, {
         method: 'DELETE'
       });
       if (!res.ok) throw new Error("Failed");
@@ -111,7 +112,7 @@ export function PlaylistProvider({ children }) {
     if (!downloadedTracks.find(t => t.id === track.id)) {
       setDownloadedTracks(prev => [track, ...prev]);
       if (currentUser) {
-        fetch(`http://localhost:5000/api/downloads`, {
+        fetch(`${API_BASE_URL}/api/downloads`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ userId: currentUser.uid, track })
@@ -123,7 +124,7 @@ export function PlaylistProvider({ children }) {
   const removeDownload = async (trackId) => {
     setDownloadedTracks(prev => prev.filter(t => t.id !== trackId));
     if (currentUser) {
-      fetch(`http://localhost:5000/api/downloads/${trackId}?userId=${currentUser.uid}`, {
+      fetch(`${API_BASE_URL}/api/downloads/${trackId}?userId=${currentUser.uid}`, {
         method: 'DELETE'
       }).catch(console.error);
     }

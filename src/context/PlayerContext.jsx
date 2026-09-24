@@ -1,5 +1,5 @@
-import { createContext, useContext, useRef, useState, useEffect } from "react";
 import { useAuth } from "./AuthContext";
+import { API_BASE_URL } from "../services/api";
 
 const PlayerContext = createContext();
 
@@ -24,7 +24,7 @@ export const PlayerProvider = ({ children }) => {
   useEffect(() => {
     if (currentUser) {
       // Fetch Likes
-      fetch(`http://localhost:5000/api/likes?userId=${currentUser.uid}`)
+      fetch(`${API_BASE_URL}/api/likes?userId=${currentUser.uid}`)
         .then(res => res.json())
         .then(data => {
           if (Array.isArray(data)) {
@@ -34,7 +34,7 @@ export const PlayerProvider = ({ children }) => {
         .catch(console.error);
         
       // Fetch History
-      fetch(`http://localhost:5000/api/history?userId=${currentUser.uid}`)
+      fetch(`${API_BASE_URL}/api/history?userId=${currentUser.uid}`)
         .then(res => res.json())
         .then(data => {
           if (Array.isArray(data)) {
@@ -123,7 +123,7 @@ export const PlayerProvider = ({ children }) => {
     setHasError(false);
     
     if (audioRef.current) {
-      const sourceUrl = track.src || `http://localhost:5000/api/stream?videoId=${track.id}`;
+      const sourceUrl = track.src || `${API_BASE_URL}/api/stream?videoId=${track.id}`;
       
       console.log("[WaveX Player] Track:", track.title);
       console.log("[WaveX Player] Playable ID:", track.id);
@@ -149,7 +149,7 @@ export const PlayerProvider = ({ children }) => {
           console.log("[WaveX Player] Play started");
           // Persist history to backend when playback genuinely succeeds
           if (currentUser) {
-            fetch(`http://localhost:5000/api/history`, {
+            fetch(`${API_BASE_URL}/api/history`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ userId: currentUser.uid, track })
@@ -221,11 +221,11 @@ export const PlayerProvider = ({ children }) => {
     
     // Backend Sync
     if (isLiked) {
-      fetch(`http://localhost:5000/api/likes/${track.id}?userId=${currentUser.uid}`, {
+      fetch(`${API_BASE_URL}/api/likes/${track.id}?userId=${currentUser.uid}`, {
         method: 'DELETE'
       }).catch(console.error);
     } else {
-      fetch(`http://localhost:5000/api/likes`, {
+      fetch(`${API_BASE_URL}/api/likes`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: currentUser.uid, track })

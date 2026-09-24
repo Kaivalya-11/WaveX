@@ -62,6 +62,9 @@ process.on('uncaughtException', (err) => {
   console.error('[Process Error] Uncaught Exception:', err);
 });
 
+const PORT = process.env.PORT || 5000;
+const API_BASE_URL = process.env.API_BASE_URL || `http://localhost:${process.env.PORT || 5000}`;
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -163,7 +166,7 @@ app.get('/api/search', async (req, res) => {
         genre: "Music",
         duration: v.duration || 0, // duration in seconds
         cover: getHighResCover(v.thumbnails, v.videoId),
-        src: `http://localhost:5000/api/stream?videoId=${v.videoId}`,
+        src: `${API_BASE_URL}/api/stream?videoId=${v.videoId}`,
       };
     });
 
@@ -211,7 +214,7 @@ app.get('/api/track', async (req, res) => {
       genre: "Music",
       duration: v.duration || 0,
       cover: getHighResCover(v.thumbnails, v.videoId),
-      src: `http://localhost:5000/api/stream?videoId=${v.videoId}`,
+      src: `${API_BASE_URL}/api/stream?videoId=${v.videoId}`,
     };
 
     res.json(track);
@@ -299,7 +302,6 @@ app.get('/api/download', async (req, res) => {
   }
 });
 
-const PORT = 5000;
 connectDB().then(() => {
   app.listen(PORT, () => {
     console.log(`Soundify backend listening on port ${PORT}`);

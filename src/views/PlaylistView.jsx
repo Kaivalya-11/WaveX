@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Heart, Music2, Play } from 'lucide-react';
 import TrackList from '../components/TrackList';
 import { usePlayer } from '../context/PlayerContext';
-import { getDefaultTracks, searchSongs } from '../services/api';
+import { getDefaultTracks, searchSongs, API_BASE_URL } from '../services/api';
 import { useNotification } from '../context/NotificationContext';
 import { useAuth } from '../context/AuthContext';
 import { usePlaylists } from '../context/PlaylistContext';
@@ -36,7 +36,7 @@ export default function PlaylistView({ activeView, activePlaylist, setActivePlay
         setLoadingTracks(true);
         if (currentUser) {
           try {
-            const res = await fetch(`http://localhost:5000/api/likes?userId=${currentUser.uid}`);
+            const res = await fetch(`${API_BASE_URL}/api/likes?userId=${currentUser.uid}`);
             const data = await res.json();
             if (Array.isArray(data)) {
               setPlaylistTracks(data.map(t => ({ ...t, id: t.trackId })));

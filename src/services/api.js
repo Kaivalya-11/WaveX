@@ -1,5 +1,6 @@
 // ================= BASE URL =================
-const YT_API = "http://localhost:5000/api/search";
+export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const YT_API = `${API_BASE_URL}/api/search`;
 
 // ================= SEARCH =================
 export const searchTracks = async (query) => {
@@ -48,7 +49,7 @@ const FALLBACK_TRACKS = [
     artist: "Ed Sheeran",
     cover: "https://i.ytimg.com/vi/JGwWNGJdvx8/hqdefault.jpg",
     duration: 233,
-    src: "http://localhost:5000/api/stream?videoId=JGwWNGJdvx8"
+    src: `${API_BASE_URL}/api/stream?videoId=JGwWNGJdvx8`
   },
   {
     id: "4NRXx6U8ABQ",
@@ -56,7 +57,7 @@ const FALLBACK_TRACKS = [
     artist: "The Weeknd",
     cover: "https://i.ytimg.com/vi/4NRXx6U8ABQ/hqdefault.jpg",
     duration: 200,
-    src: "http://localhost:5000/api/stream?videoId=4NRXx6U8ABQ"
+    src: `${API_BASE_URL}/api/stream?videoId=4NRXx6U8ABQ`
   },
   {
     id: "TUVcZfQe-Kw",
@@ -64,7 +65,7 @@ const FALLBACK_TRACKS = [
     artist: "Dua Lipa",
     cover: "https://i.ytimg.com/vi/TUVcZfQe-Kw/hqdefault.jpg",
     duration: 203,
-    src: "http://localhost:5000/api/stream?videoId=TUVcZfQe-Kw"
+    src: `${API_BASE_URL}/api/stream?videoId=TUVcZfQe-Kw`
   }
 ];
 
@@ -94,7 +95,7 @@ export const fetchTracksByIds = async (ids = []) => {
   if (!ids || ids.length === 0) return [];
   
   try {
-    const promises = ids.map(id => fetch(`http://localhost:5000/api/track?id=${id}`).then(res => res.ok ? res.json() : null));
+    const promises = ids.map(id => fetch(`${API_BASE_URL}/api/track?id=${id}`).then(res => res.ok ? res.json() : null));
     const results = await Promise.all(promises);
     return results.filter(track => track !== null);
   } catch (err) {
