@@ -107,6 +107,8 @@ export const PlayerProvider = ({ children }) => {
     }
   }, [volume, isMuted]);
 
+  const playRequestIdRef = useRef(0);
+
   const playTrack = (track, trackList = []) => {
     if (!track || !track.id) return;
     
@@ -118,10 +120,25 @@ export const PlayerProvider = ({ children }) => {
     });
     
     setProgress(0);
+    setQueue(trackList);
+
+    // Guard against redundant load requests when clicking the track that is already active
+    if (currentTrack?.id === track.id) {
+      if (hasError) {
+        // If track previously had an error, allow re-triggering load below
+      } else if (isBuffering) {
+        // Track is actively buffering/loading, do not interrupt in-flight load request
+        return;
+      } else {
+        // Toggle play/pause state for the active track
+        togglePlay();
+        return;
+      }
+    }
     
     setCurrentTrack(track);
-    setQueue(trackList);
     setHasError(false);
+    setIsBuffering(true);
     
     if (audioRef.current) {
       const sourceUrl = track.src || `${API_BASE_URL}/api/stream?videoId=${track.id}`;
@@ -133,8 +150,11 @@ export const PlayerProvider = ({ children }) => {
       if (!sourceUrl) {
         console.error("No playable media source was resolved for this track.");
         setHasError(true);
+        setIsBuffering(false);
         return;
       }
+
+      const requestId = ++playRequestIdRef.current;
       
       // Use the native backend stream
       audioRef.current.src = sourceUrl;
@@ -145,31 +165,46 @@ export const PlayerProvider = ({ children }) => {
       audioRef.current.load();
       
       console.log("[WaveX Player] Play requested");
-      audioRef.current.play()
-        .then(() => {
-          console.log("[WaveX Player] Play started");
-          // Persist history to backend when playback genuinely succeeds
-          if (currentUser) {
-            fetch(`${API_BASE_URL}/api/history`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ userId: currentUser.uid, track })
-            }).catch(err => console.error("History sync failed", err));
-          }
-        })
-        .catch(err => {
-          console.error("[WaveX Player] Playback error:", err);
-          setIsPlaying(false);
-          setIsBuffering(false);
-          setHasError(true);
-      });
+      const playPromise = audioRef.current.play();
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            if (requestId !== playRequestIdRef.current) return;
+            console.log("[WaveX Player] Play started");
+            // Persist history to backend when playback genuinely succeeds
+            if (currentUser) {
+              fetch(`${API_BASE_URL}/api/history`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: currentUser.uid, track })
+              }).catch(err => console.error("History sync failed", err));
+            }
+          })
+          .catch(err => {
+            // Ignore stale/superseded play requests
+            if (requestId !== playRequestIdRef.current) return;
+            console.error("[WaveX Player] Playback error:", err);
+            setIsPlaying(false);
+            setIsBuffering(false);
+            if (err.name !== 'AbortError') {
+              setHasError(true);
+            }
+          });
+      }
     }
   };
 
   const togglePlay = () => {
     if (!currentTrack || !audioRef.current) return;
     if (audioRef.current.paused) {
-      audioRef.current.play().catch(console.error);
+      const playPromise = audioRef.current.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(err => {
+          if (err.name !== 'AbortError') {
+            console.error("[WaveX Player] Toggle play error:", err);
+          }
+        });
+      }
     } else {
       audioRef.current.pause();
     }
