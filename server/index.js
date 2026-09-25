@@ -27,7 +27,9 @@ function getStreamUrl(videoId) {
   return new Promise((resolve, reject) => {
     const ytUrl = `https://www.youtube.com/watch?v=${videoId}`;
     const args = [
-      '--format', 'bestaudio[ext=m4a]/bestaudio[acodec=aac]/bestaudio',
+      '--js-runtimes', 'node',
+      '--extractor-args', 'youtube:player_client=android,mweb,web',
+      '--format', 'bestaudio[ext=m4a]/bestaudio/best[height<=480]/best',
       '--get-url',
       '--no-playlist',
       '--no-warnings',
