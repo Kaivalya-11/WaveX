@@ -1,0 +1,6 @@
+{
+  "/api/device/route": "app/api/device/route.js",
+  "/api/search/route": "app/api/search/route.js",
+  "/api/stream/route": "app/api/stream/route.js",
+  "/page": "app/page.js"
+}

@@ -1,4 +1,10 @@
-require('dotenv').config();
+const path = require('path');
+const fs = require('fs');
+
+// Ensure environment variables are loaded regardless of current working directory
+require('dotenv').config({ path: path.resolve(__dirname, '.env') });
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
+
 const express = require('express');
 const cors = require('cors');
 const { connectDB, getDB } = require('./config/db');
@@ -6,8 +12,31 @@ const YTMusic = require('ytmusic-api');
 const { execFile } = require('child_process');
 const { request: undiciRequest } = require('undici');
 
-// yt-dlp path — installed via pip
-const YTDLP_PATH = process.env.YTDLP_PATH || 'yt-dlp';
+// Resolve yt-dlp path: check env, standard python scripts locations, or fall back to system PATH
+function resolveYtDlp() {
+  if (process.env.YTDLP_PATH && fs.existsSync(process.env.YTDLP_PATH)) {
+    return process.env.YTDLP_PATH;
+  }
+  const localAppData = process.env.LOCALAPPDATA || '';
+  const possiblePaths = [
+    process.env.YTDLP_PATH,
+    path.join(localAppData, 'Python', 'pythoncore-3.14-64', 'Scripts', 'yt-dlp.exe'),
+    path.join(localAppData, 'Programs', 'Python', 'Python312', 'Scripts', 'yt-dlp.exe'),
+    path.join(localAppData, 'Programs', 'Python', 'Python311', 'Scripts', 'yt-dlp.exe'),
+    path.join(localAppData, 'Programs', 'Python', 'Python310', 'Scripts', 'yt-dlp.exe'),
+    path.join(process.env.APPDATA || '', 'Python', 'Scripts', 'yt-dlp.exe'),
+  ].filter(Boolean);
+
+  for (const candidate of possiblePaths) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return process.env.YTDLP_PATH || 'yt-dlp';
+}
+
+const YTDLP_PATH = resolveYtDlp();
+console.log('[Stream] Configured yt-dlp binary path:', YTDLP_PATH);
 
 // Cache: videoId -> { url, expires }
 const streamUrlCache = new Map();
@@ -43,9 +72,10 @@ function getStreamUrl(videoId) {
         console.error('[Stream] yt-dlp error for', videoId, ':', err.message.substring(0, 200));
         return reject(new Error('yt-dlp failed: ' + (stderr || err.message).substring(0, 200)));
       }
-      const url = stdout.trim().split('\n')[0];
-      if (!url || !url.startsWith('http')) {
-        return reject(new Error('yt-dlp returned invalid URL: ' + url.substring(0, 100)));
+      const lines = stdout.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      const url = lines.find(l => l.startsWith('http'));
+      if (!url) {
+        return reject(new Error('yt-dlp returned invalid URL: ' + stdout.substring(0, 100)));
       }
       console.log('[Stream] yt-dlp success for', videoId, 'url length:', url.length);
       // Cache for 110 minutes (yt-dlp URLs typically expire in 6h)
@@ -260,6 +290,12 @@ app.get('/api/stream', async (req, res) => {
     res.setHeader('Cache-Control', 'public, max-age=3600');
 
     res.status(status);
+    req.on('close', () => {
+      if (upstreamResp.body && typeof upstreamResp.body.destroy === 'function') {
+        upstreamResp.body.destroy();
+      }
+    });
+
     upstreamResp.body.on('error', (err) => {
       console.error('[Stream] Pipe error for', videoId, err.message);
       if (!res.headersSent) res.status(502).end();
@@ -292,6 +328,12 @@ app.get('/api/download', async (req, res) => {
       res.setHeader('Content-Length', upstreamResp.headers['content-length']);
     }
 
+    req.on('close', () => {
+      if (upstreamResp.body && typeof upstreamResp.body.destroy === 'function') {
+        upstreamResp.body.destroy();
+      }
+    });
+
     upstreamResp.body.on('error', (err) => {
       console.error('[Download] Pipe error for', videoId, err.message);
       if (!res.headersSent) res.status(502).end();
@@ -304,8 +346,7 @@ app.get('/api/download', async (req, res) => {
   }
 });
 
-connectDB().then(() => {
-  app.listen(PORT, () => {
-    console.log(`Soundify backend listening on port ${PORT}`);
-  });
+app.listen(PORT, () => {
+  console.log(`Soundify backend listening on port ${PORT}`);
+  connectDB().catch(console.error);
 });

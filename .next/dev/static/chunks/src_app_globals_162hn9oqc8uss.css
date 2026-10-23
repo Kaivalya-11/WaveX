@@ -1,0 +1,259 @@
+@import "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap";
+/* [project]/src/app/globals.css [app-client] (css) */
+:root {
+  --wx-bg: #080c14;
+  --wx-sidebar: #0a0f1d;
+  --wx-surface: #0f1626;
+  --wx-surface-card: #131d31;
+  --wx-surface-raised: #1a2744;
+  --wx-border: #ffffff14;
+  --wx-border-active: #00e5ff59;
+  --wx-cyan: #00e5ff;
+  --wx-cyan-dark: #00b8cc;
+  --wx-teal: #06d6a0;
+  --wx-orange: #ff7b00;
+  --wx-amber: #f59e0b;
+  --wx-text: #f8fafc;
+  --wx-text-muted: #94a3b8;
+  --wx-danger: #f87171;
+  --wx-success: #10b981;
+  --bg-primary: var(--wx-bg);
+  --bg-secondary: var(--wx-sidebar);
+  --bg-tertiary: var(--wx-surface);
+  --text-primary: var(--wx-text);
+  --text-secondary: var(--wx-text-muted);
+  --accent: var(--wx-cyan);
+  --border: var(--wx-border);
+  --font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font: var(--font-family);
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 40px;
+  --space-2xl: 64px;
+  --sidebar-width: clamp(220px, 18vw, 280px);
+  --player-height: 88px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --transition: .18s ease;
+}
+
+*, :before, :after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  background: var(--wx-bg);
+  width: 100%;
+  height: 100%;
+  color: var(--wx-text);
+  font-family: var(--font-family);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizelegibility;
+  overflow: hidden;
+}
+
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: none;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1d2d44;
+  border-radius: 8px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #2a3f5c;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-family);
+  color: var(--wx-text);
+  line-height: 1.2;
+}
+
+h1 {
+  font-size: clamp(24px, 3vw, 48px);
+  font-weight: 900;
+}
+
+h2 {
+  font-size: clamp(18px, 2vw, 28px);
+  font-weight: 800;
+}
+
+h3 {
+  font-size: clamp(15px, 1.5vw, 20px);
+  font-weight: 700;
+}
+
+p {
+  color: var(--wx-text-muted);
+  line-height: 1.6;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes wx-spin {
+  from {
+    transform: rotate(0);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: .4;
+  }
+
+  50% {
+    opacity: .8;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, var(--wx-surface) 25%, #1a2740 50%, var(--wx-surface) 75%);
+  border-radius: var(--radius-sm);
+  background-size: 200% 100%;
+  animation: 1.6s infinite shimmer;
+}
+
+button {
+  font-family: var(--font-family);
+  cursor: pointer;
+  color: inherit;
+  transition: var(--transition);
+  background: none;
+  border: none;
+  outline: none;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--wx-cyan);
+  outline-offset: 2px;
+}
+
+.truncate {
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+.flex-center {
+  justify-content: center;
+  align-items: center;
+  display: flex;
+}
+
+.visually-hidden {
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  position: absolute;
+  overflow: hidden;
+}
+
+.wx-card {
+  background: var(--wx-surface-card);
+  border: 1px solid var(--wx-border);
+  border-radius: 18px;
+  transition: all .2s;
+}
+
+.wx-card:hover {
+  background: var(--wx-surface-raised);
+  border-color: #ffffff1f;
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px #0006;
+}
+
+.wx-card-glow {
+  background: var(--wx-surface-card);
+  border: 1px solid var(--wx-border);
+  border-radius: 18px;
+  transition: all .2s;
+  box-shadow: 0 0 24px #00e5ff14;
+}
+
+.wx-card-glow:hover {
+  border-color: var(--wx-border-active);
+  box-shadow: 0 0 32px #00e5ff29;
+}
+
+.wx-pill {
+  color: var(--wx-cyan);
+  background: #00e5ff1a;
+  border: 1px solid #00e5ff33;
+  border-radius: 9999px;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  transition: all .15s;
+  display: inline-flex;
+}
+
+.wx-pill:hover {
+  background: #00e5ff2e;
+  border-color: #00e5ff59;
+  box-shadow: 0 0 12px #00e5ff40;
+}
+
+.sr-only {
+  clip: rect(0, 0, 0, 0);
+  width: 1px;
+  height: 1px;
+  position: absolute;
+  overflow: hidden;
+}
+
+/*# sourceMappingURL=src_app_globals_162hn9oqc8uss.css.map*/

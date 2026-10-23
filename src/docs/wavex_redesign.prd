@@ -1,0 +1,406 @@
+# WaveX Music Streaming App Redesign
+## Product Requirements Document (PRD) for Antigravity
+
+**Document type:** UI/UX redesign and implementation brief  
+**Product:** WaveX  
+**Reference:** `stitch_wavex_redesign.zip` (`screen.png` and `code.html`)  
+**Primary goal:** Redesign the existing WaveX web application to match the supplied Stitch reference design while preserving its working features, integrations, data, and application architecture.
+
+---
+
+## 1. Objective
+
+Redesign WaveX into a polished, modern music-streaming experience inspired by the supplied reference screen. The visual direction is a dark navy interface with bright cyan accents, generous spacing, rounded cards, high-quality artwork, subtle borders, and a persistent bottom audio player.
+
+This is a redesign of the **existing application**, not a request to create a disconnected static mockup or rebuild the product from scratch. Inspect the existing repository before editing. Reuse the current components, routes, contexts, API services, authentication, and database integrations wherever possible.
+
+## 2. Mandatory implementation rules
+
+1. **Inspect before changing.** Review the existing folder structure, `package.json` files, routes, page components, contexts, CSS, API services, authentication, and backend endpoints.
+2. Treat `screen.png` as the primary visual reference and `code.html` as a supplementary reference for colors, spacing, layout, and visual effects.
+3. Implement the design in the current codebase. Do not merely return a plan, screenshot, or standalone HTML page.
+4. Preserve existing working behavior. Do not remove features because they are not visible in the reference screenshot.
+5. Do not replace real application data with hardcoded demo content. Static placeholders may be used only as graceful fallbacks when actual data is unavailable.
+6. Do not rewrite the backend, change the database schema, migrate libraries, or replace authentication unless a genuine blocker requires it. If a change is necessary, explain why and keep it minimal.
+7. Keep the existing React/Vite frontend and separate Express/Node.js backend. WaveX uses MongoDB and Firebase authentication. Continue using the current implementation and data flow.
+8. Keep API URLs configurable through the existing environment configuration, including `VITE_API_URL` where already supported. Do not introduce production calls to `localhost` as a hardcoded URL.
+9. Preserve existing route paths, query parameters, player state, playlist state, liked songs, downloads, and user profile behavior.
+10. Do not add nonfunctional buttons, fake interactions, or decorative controls that imply functionality that does not exist.
+11. Do not copy the reference's sample counts, names, track titles, artist names, or playback progress as real user data. Render actual app data.
+12. Keep changes scoped to the redesign. Avoid unrelated refactoring.
+
+## 3. Product and user experience
+
+WaveX is a full-stack music-streaming web application. The redesign should make it feel like a cohesive music product rather than a generic admin dashboard.
+
+### Main user goals
+- Discover and search for music.
+- Start playback quickly and control it from any page.
+- Browse recommendations, playlists, liked songs, and downloads.
+- Manage personal music collections and profile information.
+- Use the app comfortably on desktop, tablet, and mobile.
+- Sign in using the existing authentication flow and retain the appropriate user-specific data.
+
+## 4. Visual direction
+
+### 4.1 Theme
+Use a deep navy/near-black base with cyan as the main accent. Maintain strong contrast and a clean hierarchy. The result should feel premium, focused, and music-oriented, not excessively neon or overloaded with glass effects.
+
+Suggested tokens based on the supplied reference:
+
+| Token | Suggested value | Use |
+|---|---|---|
+| `--wx-bg` | `#030914` | Main application background |
+| `--wx-sidebar` | `#060F1E` | Sidebar and top-level surfaces |
+| `--wx-surface` | `#0A162B` | Cards and panels |
+| `--wx-surface-raised` | `#0F203B` | Hover and elevated surfaces |
+| `--wx-border` | `#152B47` | Dividers and subtle outlines |
+| `--wx-cyan` | `#00D2FF` | Primary actions, active states, progress |
+| `--wx-cyan-soft` | `#22D3EE` | Secondary accent and highlights |
+| `--wx-text` | `#F8FAFC` | Primary text |
+| `--wx-text-muted` | `#A8B4C7` | Supporting text |
+| `--wx-danger` | `#F43F5E` | Important playback emphasis or destructive actions |
+
+Treat these as design tokens, not a requirement to replace every existing color mechanically. Use CSS variables or the project's existing theme system so the palette remains consistent.
+
+### 4.2 Typography
+- Use a clean sans-serif font such as Inter, if already available or practical to load.
+- Use bold, high-contrast headings with clear size hierarchy.
+- Use muted gray-blue for secondary labels and metadata.
+- Avoid excessive uppercase text; reserve it for small section labels and badges.
+- Ensure text remains readable against dark surfaces.
+
+### 4.3 Shape, borders, and effects
+- Cards: generally 16–24px corner radius, adjusted to the component.
+- Inputs and filter pills: rounded-full styling.
+- Use thin navy-blue borders rather than heavy outlines.
+- Apply subtle cyan glow only to primary play controls or selected elements.
+- Use gradients to support artwork cards and featured content, not as a replacement for clear information.
+- Avoid excessive blur, shadows, animation, or glassmorphism.
+- Add smooth, short hover/focus transitions. Respect `prefers-reduced-motion`.
+
+## 5. Application shell
+
+### 5.1 Desktop layout
+Create a persistent three-part shell:
+
+1. **Left sidebar:** approximately 250–275px on wide desktop.
+2. **Top header:** search, genre/filter pills, notifications, and settings where those actions exist.
+3. **Main content:** scrollable page area with a responsive content width.
+4. **Bottom player:** persistent across music-related routes and layered above the bottom of the content.
+
+The sidebar and player should remain stable while the central content scrolls. Ensure the content has enough bottom padding so its final rows are not hidden behind the player.
+
+### 5.2 Sidebar
+Use the reference as the visual guide:
+- WaveX waveform mark and wordmark at the top.
+- Primary navigation with icons and labels:
+  - Home
+  - Search
+  - Liked Songs
+  - Downloads
+  - Profile
+- Playlist section with a clear “Playlists” label and create/add action.
+- Existing playlists, collections, and other currently supported navigation items should remain available.
+- Use a cyan left indicator, subtle tinted background, and brighter text for the active route.
+- Inactive items use muted text and brighten on hover/focus.
+- Counts and badges must reflect real data when available.
+- Sidebar should support scrolling if the navigation/playlist list exceeds the viewport.
+
+Do not add a navigation item that leads nowhere. Preserve all existing routes and add new destinations only if implemented.
+
+### 5.3 Top header
+On desktop, include:
+- A prominent search field with search icon and placeholder similar to “Search for tracks, artists, or albums…”.
+- A keyboard hint such as `⌘ K` only if a working shortcut is implemented and adapted appropriately for Windows/Linux.
+- Genre/mood chips such as Minimal, House, Electronic, Chillout, and Techno as a visual pattern. Use them only if they can meaningfully filter or navigate the available content; otherwise omit or connect them to supported browsing behavior.
+- Existing notification and settings controls only if supported by the app.
+- Keep the header compact, aligned, and visually separated from the content with a subtle border.
+
+For narrow screens, collapse the header controls intelligently. Search must remain easy to reach.
+
+## 6. Home page design
+
+Use the reference's layout and visual hierarchy, but populate all sections from real application state and available API results.
+
+### 6.1 Greeting and page heading
+- Show a time-appropriate greeting if easy to support, otherwise use a stable welcoming heading.
+- Use the signed-in user's display name when available, with a safe fallback for unauthenticated users.
+- Main heading example: “Explore Modern Beats & Highlights”.
+- Supporting date/quality metadata is optional and must not claim a playback quality that the app does not actually support.
+
+### 6.2 Featured track banner
+A wide, rounded feature card near the top of the page:
+- Album/track artwork on the left.
+- Small “Featured Track” label.
+- Large track title and accent-colored subtitle where appropriate.
+- Artist and useful metadata such as duration or play count only when available.
+- Large cyan circular play button on the right.
+- Dark blue-to-cyan/navy gradient background with a subtle border.
+
+The play button must call the existing player flow and use the actual track object/source. The banner should adapt gracefully when no featured track is available.
+
+### 6.3 Recommendation and collection cards
+A section such as “Made For You” with a “View All” action when an appropriate destination exists.
+
+Use a responsive grid of artwork-led cards for supported content, for example:
+- Release Radar or new releases
+- Daily Mix or recommendations
+- Liked Songs
+- A real user playlist or relevant collection
+
+Requirements:
+- Artwork fills most of the card.
+- Apply a tasteful tinted overlay/gradient so the title and metadata remain readable.
+- Place track count or follower count in a compact pill only when backed by real data.
+- Put title and supporting copy near the bottom.
+- Include a visible play action on hover/focus and a touch-friendly action on mobile.
+- Clicking the card opens the correct collection/playlist. Clicking play starts playback using the existing queue/player logic.
+- Do not fabricate “Daily Mix”, “Release Radar”, follower counts, or generated recommendations if the backend does not support them. Map the layout to existing playlists, liked songs, search results, or supported collections.
+
+### 6.4 Tracks of the Week / track list
+Create a clean list panel with:
+- Section heading and optional “updated” metadata only if real.
+- Track artwork thumbnail.
+- Track title and artist/subtitle.
+- Optional duration or play count if available.
+- Like/unlike control.
+- Play control or clickable row.
+- Hover and keyboard focus states.
+
+Keep the row compact and aligned. Clicking a row should use the current player context and preserve queue behavior. Do not create a second audio element or a separate playback implementation.
+
+### 6.5 Recent artists or recently played content
+A secondary panel may show recently played tracks/artists or artist-based recommendations, but only when that data exists. If the app does not store artist history, use a currently supported section instead of inventing history.
+
+On large screens, the track list and secondary panel may sit side by side, similar to the reference. On smaller screens, stack them in a logical order.
+
+### 6.6 Empty, loading, and error states
+Provide designed states for:
+- First-time user with no playlists or liked songs.
+- Empty search results.
+- Loading content.
+- API/backend unavailable.
+- Missing or broken artwork.
+- No downloads.
+- Authentication-required content.
+
+Use concise messages and useful recovery actions. Do not leave blank panels or show a permanent spinner.
+
+## 7. Persistent bottom music player
+
+This is a key element of the redesign. Keep it visually consistent across relevant routes.
+
+### Layout
+- **Left:** artwork thumbnail, current track title, artist, and like/favorite action.
+- **Center:** shuffle, previous, prominent play/pause, next, repeat, and progress bar with elapsed/total time.
+- **Right:** queue/playlist, volume, and fullscreen or other currently supported controls.
+- Use a dark, nearly opaque surface, subtle top border, and clear separation from page content.
+- The main play/pause control may use a coral/pink accent as in the screenshot, while cyan remains the primary app accent. Keep the accent system intentional and consistent.
+
+### Functional requirements
+- Reuse the existing `PlayerContext` and existing audio element. Do not introduce another player instance.
+- Preserve play, pause, previous, next, seek, volume, shuffle, repeat, and queue behavior where implemented.
+- Ensure progress and time labels are synchronized with the actual audio element.
+- Clicking a track multiple times must not create duplicate audio elements or unnecessary source reloads.
+- Handle autoplay rejection, unavailable sources, loading, and playback errors gracefully.
+- Preserve current playback when navigating between pages.
+- Ensure all controls have accessible names, tooltips where useful, visible focus styles, and touch-sized targets.
+- On mobile, provide a compact player bar with essential controls and a way to open the expanded player if supported. Do not allow the player to cover navigation or essential content.
+
+If a control is not supported by the current application, either implement it through the existing architecture or do not display it as an active control.
+
+## 8. Search and browsing
+
+- Retain the existing search route and API integration.
+- Search for tracks, artists, and albums to the extent supported by the current backend.
+- Show a clear loading state, results state, no-results state, and error state.
+- Use artwork-led result rows/cards consistent with the new design.
+- Make result selection start playback through the existing player.
+- Keep search usable with keyboard and screen readers.
+- If adding a keyboard shortcut, ensure it works on Windows/Linux as well as macOS, does not trigger while typing into another field, and has a visible or discoverable hint.
+- Do not break existing query behavior or API response parsing.
+
+## 9. Liked songs, playlists, downloads, and profile
+
+Redesign each existing page to use the same visual language while preserving its current functionality.
+
+### Liked Songs
+- Show a clear title, real liked-track count, and list of liked tracks.
+- Keep like/unlike state synchronized with the existing user-data flow.
+- Clicking a track plays it through the shared player.
+
+### Playlists
+- Preserve create, view, edit, and delete functionality currently available.
+- Show playlist artwork/cover, name, track count, and useful metadata.
+- Make create/edit dialogs responsive and keyboard accessible.
+- Preserve playlist ownership and user isolation.
+
+### Downloads
+- Preserve current download metadata behavior and API integration, including MongoDB synchronization where implemented.
+- Clearly distinguish a saved download record from a file that is actually available offline. Do not claim offline playback unless the current implementation genuinely supports it.
+- Keep download actions, loading/error feedback, and delete behavior functional.
+
+### Profile and authentication
+- Keep Firebase authentication and existing profile behavior.
+- Preserve sign-in/sign-up/sign-out and protected routes.
+- Use the redesign for profile surfaces, forms, and dialogs.
+- Do not expose another user's playlists, downloads, likes, or profile data.
+- Never hardcode credentials, tokens, private keys, or environment values into frontend code.
+
+## 10. Responsive behavior
+
+### Desktop (approximately 1200px and wider)
+- Full sidebar, top search/filter header, multi-column home layout, persistent full player.
+- Keep the design close to the reference screenshot's proportions without forcing a fixed 1600px canvas.
+
+### Tablet (approximately 768–1199px)
+- Reduce sidebar width or use a collapsible sidebar.
+- Reduce card columns from four to two or three depending on available width.
+- Keep the player controls usable without crowding the track information.
+
+### Mobile (below approximately 768px)
+- Use a compact/collapsible navigation pattern or bottom navigation if it fits the existing routing.
+- Do not simply shrink the desktop sidebar into an unusable narrow column.
+- Search must be prominent and easy to open.
+- Stack feature banner content when needed.
+- Use two columns for cards when comfortable, otherwise one column.
+- Collapse or hide secondary player controls while preserving essential playback.
+- Ensure dialogs, forms, lists, and buttons fit small screens.
+- Prevent horizontal overflow at 320px viewport width.
+- Account for safe-area insets where applicable.
+
+Responsive design must be tested at 320px, 375px, 768px, 1024px, 1366px, and 1920px widths.
+
+## 11. Interaction and motion
+
+- Use consistent hover, active, focus, pressed, loading, and disabled states.
+- Keep transitions subtle, generally around 150–250ms.
+- Artwork cards may gently brighten or scale slightly on hover, without causing layout shifts.
+- Use clear visual feedback after liking a track, creating a playlist, deleting an item, or completing an action.
+- Use confirmation for destructive actions where appropriate.
+- Respect reduced-motion preferences.
+- Avoid interactions that work only on hover because touch devices do not have hover.
+
+## 12. Accessibility
+
+- Use semantic landmarks and correct heading order.
+- Ensure text and controls meet practical contrast expectations.
+- Provide accessible labels for icon-only buttons.
+- Support keyboard navigation and visible focus indicators.
+- Use buttons for actions and links for navigation.
+- Do not communicate state through color alone.
+- Ensure dialogs manage focus and can be closed with Escape where appropriate.
+- Use meaningful alt text for artwork when it conveys content; use empty alt text for decorative images.
+- Respect reduced-motion preferences.
+
+## 13. Technical implementation constraints
+
+- Frontend: existing React + Vite codebase.
+- Backend: existing Express/Node.js service.
+- Database: existing MongoDB integration using the current driver and schema.
+- Authentication: existing Firebase integration.
+- Preserve existing API endpoints, request/response formats, and environment configuration.
+- Reuse the existing contexts/services for player, authentication, playlists, likes, and downloads.
+- Avoid adding a new UI framework or component library unless already installed or clearly necessary.
+- Prefer reusable components and shared design tokens over page-specific duplicated styling.
+- Avoid giant all-in-one components. Keep components small and maintainable.
+- Do not leave unused dependencies, temporary debug logs, fake API data, or placeholder buttons.
+- Do not expose secrets in `.env.example`; use descriptive placeholders only.
+- Keep existing build and deployment configuration working.
+
+### Suggested component boundaries
+Adapt these names to the existing repository rather than creating duplicates unnecessarily:
+- `AppShell`
+- `Sidebar`
+- `TopBar` / `SearchBar`
+- `GenreFilter` (only if filters are functional)
+- `FeaturedTrack`
+- `CollectionCard`
+- `TrackRow`
+- `TrackList`
+- `RecentActivityPanel`
+- `PlayerBar`
+- `ExpandedPlayer` (only if supported)
+- `EmptyState`
+- `LoadingState`
+- `ErrorState`
+
+## 14. Design reference interpretation
+
+The provided reference screenshot shows:
+- Deep navy background and a fixed left sidebar.
+- Cyan active navigation state and waveform brand icon.
+- Search bar and genre chips along the top.
+- Large welcome heading.
+- A prominent featured track banner with artwork and circular play button.
+- A four-card artwork grid with colored overlays.
+- A track list panel and a secondary artist panel.
+- A persistent bottom player with playback progress.
+
+Use this hierarchy and styling as the visual target. The reference is a single desktop viewport, so use design judgment for other routes, mobile layouts, dialogs, loading states, and empty states. Do not reproduce the screenshot's sample user data as actual app content.
+
+## 15. Implementation plan for Antigravity
+
+Work in small, verifiable phases. Do not attempt a risky full rewrite in one pass.
+
+### Phase 1: Audit and plan
+- Inspect the repository and identify current routes, contexts, data sources, reusable components, and styling approach.
+- Identify which reference sections map to existing features.
+- Record any visual or technical conflicts before editing.
+- Do not ask the user to manually recreate information that is already present in the codebase.
+
+### Phase 2: Design foundation and shell
+- Establish color, spacing, radius, typography, and elevation tokens.
+- Redesign the app shell, sidebar, top header, content container, and persistent player frame.
+- Confirm existing routes still render.
+
+### Phase 3: Home page
+- Implement the greeting, featured track, collection cards, track list, and secondary panel using real data.
+- Add loading, empty, and error states.
+- Wire all playback and navigation actions to existing application logic.
+
+### Phase 4: Remaining pages
+- Apply the same design system to Search, Liked Songs, Downloads, Playlists, and Profile.
+- Preserve existing functionality and user-specific data.
+- Keep the design consistent without making every page look identical.
+
+### Phase 5: Responsive and accessibility pass
+- Test all target viewport widths.
+- Check keyboard access, focus visibility, contrast, touch targets, and reduced motion.
+- Verify the bottom player does not obscure content.
+
+### Phase 6: Verification
+- Run the existing build command and any available tests/lint checks.
+- Fix errors caused by the redesign.
+- Test navigation, authentication, search, playback, likes, playlist operations, and downloads.
+- Check that frontend API calls use configured URLs and that no accidental localhost-only production dependency has been introduced.
+- Summarize files changed, features preserved, checks run, and any remaining limitations.
+
+## 16. Acceptance criteria
+
+The redesign is complete only when all of the following are satisfied:
+
+- [ ] The application visually follows the supplied reference's dark navy and cyan design direction.
+- [ ] The app remains the existing WaveX product, not a standalone static mockup.
+- [ ] Existing routes and authentication flows continue to work.
+- [ ] Search continues to use the existing backend and supports loading, error, and empty states.
+- [ ] Track selection and playback use the existing shared player and audio instance.
+- [ ] Playback state persists across navigation.
+- [ ] Like/unlike actions update the correct user's data.
+- [ ] Playlist functionality continues to work.
+- [ ] Downloads continue to use the existing data flow and accurately describe offline availability.
+- [ ] No real user content is replaced with sample names or hardcoded counts.
+- [ ] The interface is usable at mobile, tablet, laptop, and wide desktop sizes.
+- [ ] No horizontal overflow occurs at 320px width.
+- [ ] The bottom player does not obscure page content.
+- [ ] Icon-only controls have accessible labels and keyboard focus styles.
+- [ ] No visible button is knowingly left nonfunctional.
+- [ ] No secrets are committed or exposed.
+- [ ] Production API configuration remains environment-based.
+- [ ] The production build completes successfully.
+- [ ] The final response reports what changed and any tests that could not be run.
+
+## 17. Final instruction to Antigravity
+
+First inspect the current WaveX repository and map the supplied reference design to the existing implementation. Then implement the redesign in small phases, preserving all existing working functionality and the current frontend/backend architecture. Prioritize visual fidelity to the supplied screenshot, responsive behavior, accessible interactions, real application data, and reliable music playback. Do not stop after producing a plan. Implement the changes, run the available checks, fix regressions, and provide a concise implementation report.
