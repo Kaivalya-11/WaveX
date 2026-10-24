@@ -1,0 +1,1 @@
+globalThis.__RSC_MANIFEST=(globalThis.__RSC_MANIFEST||{});globalThis.__RSC_MANIFEST["/api/likes/route"]={"moduleLoading":{"prefix":"/_next/"},"ssrModuleMapping":{},"edgeSSRModuleMapping":{},"clientModules":{},"entryCSSFiles":{"C:\\CoreByte Studios\\Website\\corebyte-website\\projects\\WaveX\\src\\app\\api\\likes\\route":[]},"rscModuleMapping":{},"edgeRscModuleMapping":{}};

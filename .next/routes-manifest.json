@@ -1,0 +1,187 @@
+{
+  "version": 3,
+  "pages404": true,
+  "appType": "app",
+  "caseSensitive": false,
+  "basePath": "",
+  "redirects": [
+    {
+      "source": "/:path+/",
+      "destination": "/:path+",
+      "internal": true,
+      "priority": true,
+      "statusCode": 308,
+      "regex": "^(?:/((?:[^/]+?)(?:/(?:[^/]+?))*))/$"
+    }
+  ],
+  "headers": [],
+  "onMatchHeaders": [],
+  "rewrites": {
+    "beforeFiles": [],
+    "afterFiles": [],
+    "fallback": []
+  },
+  "dynamicRoutes": [
+    {
+      "page": "/api/downloads/[trackId]",
+      "regex": "^/api/downloads/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPtrackId": "nxtPtrackId"
+      },
+      "namedRegex": "^/api/downloads/(?<nxtPtrackId>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/api/likes/[trackId]",
+      "regex": "^/api/likes/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPtrackId": "nxtPtrackId"
+      },
+      "namedRegex": "^/api/likes/(?<nxtPtrackId>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/api/playlists/[id]",
+      "regex": "^/api/playlists/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/playlists/(?<nxtPid>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/api/playlists/[id]/tracks",
+      "regex": "^/api/playlists/([^/]+?)/tracks(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/playlists/(?<nxtPid>[^/]+?)/tracks(?:/)?$"
+    },
+    {
+      "page": "/api/playlists/[id]/tracks/[trackId]",
+      "regex": "^/api/playlists/([^/]+?)/tracks/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid",
+        "nxtPtrackId": "nxtPtrackId"
+      },
+      "namedRegex": "^/api/playlists/(?<nxtPid>[^/]+?)/tracks/(?<nxtPtrackId>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/api/users/[id]",
+      "regex": "^/api/users/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/users/(?<nxtPid>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/api/users/[id]/preferences",
+      "regex": "^/api/users/([^/]+?)/preferences(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/users/(?<nxtPid>[^/]+?)/preferences(?:/)?$"
+    }
+  ],
+  "staticRoutes": [
+    {
+      "page": "/",
+      "regex": "^/(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/(?:/)?$"
+    },
+    {
+      "page": "/_global-error",
+      "regex": "^/_global\\-error(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/_global\\-error(?:/)?$"
+    },
+    {
+      "page": "/_not-found",
+      "regex": "^/_not\\-found(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/_not\\-found(?:/)?$"
+    },
+    {
+      "page": "/api/device",
+      "regex": "^/api/device(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/device(?:/)?$"
+    },
+    {
+      "page": "/api/download",
+      "regex": "^/api/download(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/download(?:/)?$"
+    },
+    {
+      "page": "/api/downloads",
+      "regex": "^/api/downloads(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/downloads(?:/)?$"
+    },
+    {
+      "page": "/api/health",
+      "regex": "^/api/health(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/health(?:/)?$"
+    },
+    {
+      "page": "/api/history",
+      "regex": "^/api/history(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/history(?:/)?$"
+    },
+    {
+      "page": "/api/likes",
+      "regex": "^/api/likes(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/likes(?:/)?$"
+    },
+    {
+      "page": "/api/playlists",
+      "regex": "^/api/playlists(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/playlists(?:/)?$"
+    },
+    {
+      "page": "/api/search",
+      "regex": "^/api/search(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/search(?:/)?$"
+    },
+    {
+      "page": "/api/stream",
+      "regex": "^/api/stream(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/stream(?:/)?$"
+    },
+    {
+      "page": "/api/track",
+      "regex": "^/api/track(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/track(?:/)?$"
+    },
+    {
+      "page": "/api/users",
+      "regex": "^/api/users(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/users(?:/)?$"
+    }
+  ],
+  "dataRoutes": [],
+  "rsc": {
+    "header": "rsc",
+    "varyHeader": "rsc, next-router-state-tree, next-router-prefetch, next-router-segment-prefetch",
+    "prefetchHeader": "next-router-prefetch",
+    "didPostponeHeader": "x-nextjs-postponed",
+    "contentTypeHeader": "text/x-component",
+    "suffix": ".rsc",
+    "prefetchSegmentHeader": "next-router-segment-prefetch",
+    "prefetchSegmentSuffix": ".segment.rsc",
+    "prefetchSegmentDirSuffix": ".segments",
+    "clientParamParsing": false,
+    "dynamicRSCPrerender": false
+  },
+  "rewriteHeaders": {
+    "pathHeader": "x-nextjs-rewritten-path",
+    "queryHeader": "x-nextjs-rewritten-query"
+  }
+}

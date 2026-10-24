@@ -1,0 +1,23 @@
+{
+  "/_not-found/page": "/_not-found",
+  "/_global-error/page": "/_global-error",
+  "/api/device/route": "/api/device",
+  "/api/download/route": "/api/download",
+  "/api/downloads/[trackId]/route": "/api/downloads/[trackId]",
+  "/api/downloads/route": "/api/downloads",
+  "/api/health/route": "/api/health",
+  "/api/history/route": "/api/history",
+  "/api/likes/[trackId]/route": "/api/likes/[trackId]",
+  "/api/likes/route": "/api/likes",
+  "/api/playlists/[id]/route": "/api/playlists/[id]",
+  "/api/playlists/[id]/tracks/[trackId]/route": "/api/playlists/[id]/tracks/[trackId]",
+  "/api/playlists/[id]/tracks/route": "/api/playlists/[id]/tracks",
+  "/api/playlists/route": "/api/playlists",
+  "/api/search/route": "/api/search",
+  "/api/stream/route": "/api/stream",
+  "/api/track/route": "/api/track",
+  "/api/users/[id]/preferences/route": "/api/users/[id]/preferences",
+  "/api/users/[id]/route": "/api/users/[id]",
+  "/api/users/route": "/api/users",
+  "/page": "/"
+}
