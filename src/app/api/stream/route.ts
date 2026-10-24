@@ -1,227 +1,159 @@
-import { NextRequest } from 'next/server';
-import { getStreamUrl, invalidateStreamUrl } from '@/lib/ytdlp';
+
+import { NextRequest, NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 120;
 
-export async function OPTIONS() {
-  return new Response(null, {
-    status: 204,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
-      'Access-Control-Allow-Headers': 'Range, Content-Type, Accept',
-      'Access-Control-Expose-Headers': 'Content-Range, Content-Length, Accept-Ranges',
-      'Access-Control-Max-Age': '86400',
+const VIDEO_ID_REGEX = /^[a-zA-Z0-9_-]{11}$/;
+const REQUEST_TIMEOUT_MS = 120_000;
+
+const FORWARDED_RESPONSE_HEADERS = [
+  'content-type',
+  'content-length',
+  'content-range',
+  'accept-ranges',
+  'etag',
+  'last-modified',
+] as const;
+
+function getBackendUrl(): URL | null {
+  const value = process.env.BACKEND_URL?.trim();
+
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const url = new URL(value);
+
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+      return null;
+    }
+
+    return url;
+  } catch {
+    return null;
+  }
+}
+
+function jsonError(message: string, status: number) {
+  return NextResponse.json(
+    { error: message },
+    {
+      status,
+      headers: {
+        'Cache-Control': 'no-store',
+      },
     },
+  );
+}
+
+async function proxyStream(
+  request: NextRequest,
+  method: 'GET' | 'HEAD',
+): Promise<Response> {
+  const backendUrl = getBackendUrl();
+
+  if (!backendUrl) {
+    console.error('[WaveX Stream Proxy] BACKEND_URL is missing or invalid.');
+
+    return jsonError('Streaming backend is not configured.', 500);
+  }
+
+  const videoId = request.nextUrl.searchParams.get('videoId');
+
+  if (!videoId || !VIDEO_ID_REGEX.test(videoId)) {
+    return jsonError('A valid videoId is required.', 400);
+  }
+
+  const target = new URL('/api/stream', backendUrl);
+  target.searchParams.set('videoId', videoId);
+
+  const requestHeaders = new Headers();
+
+  // Forward byte-range requests so seeking works in the audio player.
+  const range = request.headers.get('range');
+  if (range) {
+    requestHeaders.set('Range', range);
+  }
+
+  const ifRange = request.headers.get('if-range');
+  if (ifRange) {
+    requestHeaders.set('If-Range', ifRange);
+  }
+
+  let upstream: Response;
+
+  try {
+    upstream = await fetch(target, {
+      method,
+      headers: requestHeaders,
+      cache: 'no-store',
+      redirect: 'error',
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+  } catch (error) {
+    console.error(
+      '[WaveX Stream Proxy] Could not reach Render:',
+      error instanceof Error ? error.message : String(error),
+    );
+
+    return jsonError('Unable to reach the streaming backend.', 502);
+  }
+
+  // Preserve upstream errors instead of returning a false successful audio response.
+  if (!upstream.ok) {
+    const upstreamStatus = upstream.status;
+
+    // A 416 response can include Content-Range: bytes */length.
+    const errorHeaders = new Headers({
+      'Cache-Control': 'no-store',
+    });
+
+    const contentRange = upstream.headers.get('content-range');
+    if (contentRange) {
+      errorHeaders.set('Content-Range', contentRange);
+    }
+
+    // Do not expose the upstream error body, which may contain internal details.
+    await upstream.body?.cancel().catch(() => {});
+
+    console.error(
+      `[WaveX Stream Proxy] Render returned HTTP ${upstreamStatus} for ${videoId}.`,
+    );
+
+    return new Response(null, {
+      status: upstreamStatus,
+      headers: errorHeaders,
+    });
+  }
+
+  const responseHeaders = new Headers();
+
+  for (const header of FORWARDED_RESPONSE_HEADERS) {
+    const value = upstream.headers.get(header);
+
+    if (value) {
+      responseHeaders.set(header, value);
+    }
+  }
+
+  // Never cache signed, temporary audio URLs through this proxy.
+  responseHeaders.set('Cache-Control', 'private, no-store');
+
+  // Do not force audio/mp4: the backend's Content-Type is authoritative.
+  // Do not invent Content-Length or Content-Range when upstream omits them.
+  return new Response(method === 'HEAD' ? null : upstream.body, {
+    status: upstream.status,
+    headers: responseHeaders,
   });
 }
 
-export async function HEAD(req: NextRequest) {
-  const { searchParams } = new URL(req.url);
-  const videoId = searchParams.get('videoId');
-
-  if (!videoId) {
-    return new Response(null, { status: 400 });
-  }
-
-  try {
-    const audioUrl = await getStreamUrl(videoId);
-    const upstreamResp = await fetch(audioUrl, {
-      method: 'HEAD',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        'Accept': '*/*',
-      },
-      redirect: 'follow',
-    });
-
-    const headers = new Headers();
-    const contentType = upstreamResp.headers.get('content-type') || 'audio/mp4';
-    const contentLength = upstreamResp.headers.get('content-length');
-
-    headers.set('Content-Type', contentType);
-    headers.set('Accept-Ranges', 'bytes');
-    if (contentLength) headers.set('Content-Length', contentLength);
-    headers.set('Access-Control-Allow-Origin', '*');
-    headers.set('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges');
-
-    return new Response(null, {
-      status: upstreamResp.status === 200 ? 200 : upstreamResp.status,
-      headers,
-    });
-  } catch {
-    return new Response(null, { status: 500 });
-  }
+export async function GET(request: NextRequest): Promise<Response> {
+  return proxyStream(request, 'GET');
 }
 
-export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url);
-  const videoId = searchParams.get('videoId');
-
-  if (!videoId) {
-    return new Response(
-      JSON.stringify({ error: 'Missing videoId' }),
-      {
-        status: 400,
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*',
-        },
-      }
-    );
-  }
-
-  try {
-    let audioUrl = await getStreamUrl(videoId);
-
-    const clientRange = req.headers.get('range');
-    const upstreamHeaders: Record<string, string> = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-      'Accept': '*/*',
-      'Accept-Encoding': 'identity',
-    };
-
-    if (clientRange) {
-      upstreamHeaders['Range'] = clientRange;
-    }
-
-    let upstreamResp = await fetch(audioUrl, {
-      headers: upstreamHeaders,
-      redirect: 'follow',
-    });
-
-    // Handle upstream 403 (expired signed URL): invalidate cache and retry once
-    if (upstreamResp.status === 403) {
-      console.warn(`[Stream] 403 from upstream for ${videoId}, invalidating cache and retrying...`);
-      invalidateStreamUrl(videoId);
-      audioUrl = await getStreamUrl(videoId);
-      upstreamResp = await fetch(audioUrl, {
-        headers: upstreamHeaders,
-        redirect: 'follow',
-      });
-    }
-
-    if (!upstreamResp.ok) {
-      invalidateStreamUrl(videoId);
-      const isNotFound = upstreamResp.status === 404;
-      return new Response(
-        JSON.stringify({
-          error: isNotFound ? 'Track source not found' : 'Upstream stream error',
-          status: upstreamResp.status,
-        }),
-        {
-          status: isNotFound ? 404 : 502,
-          headers: {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
-          },
-        }
-      );
-    }
-
-    const rawContentType = upstreamResp.headers.get('content-type') || 'audio/mp4';
-    if (rawContentType.includes('text') || rawContentType.includes('html')) {
-      invalidateStreamUrl(videoId);
-      return new Response(
-        JSON.stringify({ error: 'Invalid upstream media content type', contentType: rawContentType }),
-        {
-          status: 502,
-          headers: {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
-          },
-        }
-      );
-    }
-
-    const contentType = rawContentType.startsWith('audio/') || rawContentType.startsWith('video/')
-      ? rawContentType
-      : 'audio/mp4';
-
-    const responseHeaders = new Headers();
-    responseHeaders.set('Content-Type', contentType);
-    responseHeaders.set('Accept-Ranges', 'bytes');
-    responseHeaders.set('Cache-Control', 'public, max-age=3600');
-    responseHeaders.set('Access-Control-Allow-Origin', '*');
-    responseHeaders.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-    responseHeaders.set('Access-Control-Allow-Headers', 'Range, Content-Type, Accept');
-    responseHeaders.set('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges');
-
-    const contentLength = upstreamResp.headers.get('content-length');
-    if (contentLength) {
-      responseHeaders.set('Content-Length', contentLength);
-    }
-
-    const contentRange = upstreamResp.headers.get('content-range');
-    if (contentRange) {
-      responseHeaders.set('Content-Range', contentRange);
-    }
-
-    // Stream upstream body directly to the client without in-memory buffering
-    return new Response(upstreamResp.body, {
-      status: upstreamResp.status,
-      headers: responseHeaders,
-    });
-  } catch (err: any) {
-    const errMsg = err?.message || 'Stream extraction error';
-    console.warn('[API Stream Error]:', errMsg);
-
-    // Fallback: If local extraction encountered an error, try forwarding to the active WaveX backend server on port 5000
-    try {
-      const clientRange = req.headers.get('range');
-      const backendUrl = `http://localhost:5000/api/stream?videoId=${encodeURIComponent(videoId)}`;
-      const fwdHeaders: Record<string, string> = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        'Accept': '*/*',
-      };
-      if (clientRange) fwdHeaders['Range'] = clientRange;
-
-      const fwdResp = await fetch(backendUrl, {
-        headers: fwdHeaders,
-        signal: AbortSignal.timeout(5000),
-      });
-
-      if (fwdResp.ok) {
-        const respHeaders = new Headers();
-        const ct = fwdResp.headers.get('content-type') || 'audio/mp4';
-        respHeaders.set('Content-Type', ct);
-        respHeaders.set('Accept-Ranges', 'bytes');
-        respHeaders.set('Cache-Control', 'public, max-age=3600');
-        respHeaders.set('Access-Control-Allow-Origin', '*');
-        respHeaders.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-        respHeaders.set('Access-Control-Allow-Headers', 'Range, Content-Type, Accept');
-        respHeaders.set('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges');
-
-        const cl = fwdResp.headers.get('content-length');
-        if (cl) respHeaders.set('Content-Length', cl);
-        const cr = fwdResp.headers.get('content-range');
-        if (cr) respHeaders.set('Content-Range', cr);
-
-        return new Response(fwdResp.body, {
-          status: fwdResp.status,
-          headers: respHeaders,
-        });
-      }
-    } catch {
-      // Port 5000 backend not reachable, proceed to error response
-    }
-
-    const isUnavailable = errMsg.includes('TRACK_UNAVAILABLE') || errMsg.includes('unavailable');
-    const statusCode = isUnavailable ? 404 : 502;
-
-    return new Response(
-      JSON.stringify({
-        error: isUnavailable ? 'Track unavailable' : 'Stream extraction failed',
-        message: errMsg,
-      }),
-      {
-        status: statusCode,
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*',
-        },
-      }
-    );
-  }
+export async function HEAD(request: NextRequest): Promise<Response> {
+  return proxyStream(request, 'HEAD');
 }
