@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
 const VIDEO_ID_REGEX = /^[a-zA-Z0-9_-]{11}$/;
-const REQUEST_TIMEOUT_MS = 120_000;
+const REQUEST_TIMEOUT_MS = 25_000;
 
 const FORWARDED_RESPONSE_HEADERS = [
   'content-type',
@@ -94,12 +94,13 @@ async function proxyStream(
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
   } catch (error) {
+    const isTimeout = error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError');
     console.error(
       '[WaveX Stream Proxy] Could not reach Render:',
       error instanceof Error ? error.message : String(error),
     );
 
-    return jsonError('Unable to reach the streaming backend.', 502);
+    return jsonError(isTimeout ? 'Streaming backend timed out.' : 'Unable to reach the streaming backend.', isTimeout ? 504 : 502);
   }
 
   // Preserve upstream errors instead of returning a false successful audio response.

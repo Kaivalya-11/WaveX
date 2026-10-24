@@ -15,6 +15,40 @@ const { request: undiciRequest } = require('undici');
 // Video ID validation: exactly 11 valid base64url characters
 const VIDEO_ID_REGEX = /^[a-zA-Z0-9_-]{11}$/;
 
+// Strict extraction deadlines to prevent 504 Gateway Timeouts
+const TOTAL_EXTRACTION_TIMEOUT_MS = 12000; // 12 seconds max total extraction budget
+const SINGLE_EXECUTION_TIMEOUT_MS = 5000;  // 5 seconds max per yt-dlp attempt
+
+// Rate-limiting / IP throttling circuit breaker state
+let upstreamRateLimitUntil = 0;
+
+/**
+ * Check if an error indicates YouTube 429 rate-limiting or bot detection challenges.
+ */
+function isRateLimitError(message) {
+  if (!message) return false;
+  const msg = String(message).toLowerCase();
+  return msg.includes('429') ||
+         msg.includes('too many requests') ||
+         msg.includes('confirm you\'re not a bot') ||
+         msg.includes('sign in to confirm') ||
+         msg.includes('bot detection') ||
+         msg.includes('rate limit');
+}
+
+/**
+ * Check if an error indicates the video is private, removed, or geo-restricted.
+ */
+function isUnavailableError(message) {
+  if (!message) return false;
+  const msg = String(message).toLowerCase();
+  return msg.includes('video unavailable') ||
+         msg.includes('private video') ||
+         msg.includes('this video is unavailable') ||
+         msg.includes('has been removed') ||
+         msg.includes('copyright');
+}
+
 /**
  * Sanitize diagnostic text for logging:
  * - Redacts tokens, signatures, secrets, and auth credentials.
@@ -96,7 +130,7 @@ function runStartupDiagnostic(binaryPath) {
   console.log(`[Stream Diagnostic] OS: ${process.platform} (${process.arch}) | Node: ${process.version}`);
   console.log(`[Stream Diagnostic] Configured yt-dlp binary path: ${binaryPath}`);
 
-  execFile(binaryPath, ['--version'], { timeout: 10000 }, (err, stdout, stderr) => {
+  execFile(binaryPath, ['--version'], { timeout: 8000 }, (err, stdout, stderr) => {
     if (err) {
       console.warn(`[Stream Diagnostic] [WARNING] yt-dlp executable check failed for "${binaryPath}":`);
       console.warn(`  - Error Code: ${err.code || 'UNKNOWN'}`);
@@ -104,7 +138,7 @@ function runStartupDiagnostic(binaryPath) {
       if (stderr) console.warn(`  - Stderr: ${sanitizeDiagnosticText(stderr)}`);
       console.warn(`[Stream Diagnostic] Actionable Guidance:`);
       console.warn(`  - On Render: Set Build Command to: "pip install --upgrade yt-dlp yt-dlp-ejs && npm install" and set YTDLP_PATH="yt-dlp"`);
-      console.warn(`  - Fallback extraction strategies (play-dl / tiered yt-dlp) are active.`);
+      console.warn(`  - Fallback extraction strategies are active.`);
     } else {
       console.log(`[Stream Diagnostic] SUCCESS: yt-dlp is available and executable. Version: ${stdout.trim()}`);
     }
@@ -116,12 +150,16 @@ runStartupDiagnostic(YTDLP_PATH);
 // In-memory Cache: videoId -> { url, expires }
 const streamUrlCache = new Map();
 
+// In-flight extraction deduplication: videoId -> Promise<string>
+// Prevents duplicate concurrent requests for the same track from triggering parallel extraction storms
+const inFlightExtractions = new Map();
+
 /**
  * Low-level yt-dlp runner that returns captured output and structured diagnostic details on error.
  */
-function executeYtDlp(executable, args, timeoutMs = 35000) {
+function executeYtDlp(executable, args, timeoutMs = SINGLE_EXECUTION_TIMEOUT_MS) {
   return new Promise((resolve, reject) => {
-    execFile(executable, args, { timeout: timeoutMs, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+    execFile(executable, args, { timeout: timeoutMs, maxBuffer: 5 * 1024 * 1024 }, (err, stdout, stderr) => {
       const rawStdout = (stdout || '').trim();
       const rawStderr = (stderr || '').trim();
 
@@ -149,56 +187,41 @@ function executeYtDlp(executable, args, timeoutMs = 35000) {
 }
 
 /**
- * Use a multi-tiered extraction strategy to extract the best direct audio stream URL:
- * - Tier 1: Modern yt-dlp with Node JS runtime and remote components (handles modern YouTube JS signature challenges).
- * - Tier 2: Standard yt-dlp with mobile/web clients (without experimental JS options).
- * - Tier 3: Universal minimal arguments.
- * - Tier 4: Pure Node.js fallback using play-dl.
+ * Core internal extraction worker with strict deadline and deduplication.
  */
-async function getStreamUrl(videoId) {
-  if (!VIDEO_ID_REGEX.test(videoId)) {
-    throw new Error(`Invalid YouTube video ID format: ${videoId}`);
-  }
-
-  // Check cache (TTL 90 minutes; YouTube signed URLs usually last 6 hours)
-  const cached = streamUrlCache.get(videoId);
-  if (cached && cached.expires > Date.now()) {
-    console.log(`[Stream] Cache hit for ${videoId}`);
-    return cached.url;
-  }
-
+async function extractStreamUrlInternal(videoId) {
+  const startTime = Date.now();
   const ytUrl = `https://www.youtube.com/watch?v=${videoId}`;
+
+  // Check rate limit circuit-breaker
+  if (upstreamRateLimitUntil > Date.now()) {
+    const remainingSec = Math.ceil((upstreamRateLimitUntil - Date.now()) / 1000);
+    const rateLimitErr = new Error(`YouTube rate-limiting active on backend. Cooldown in progress (${remainingSec}s remaining).`);
+    rateLimitErr.status = 429;
+    throw rateLimitErr;
+  }
+
+  // Tiers to execute within time budget.
+  // Note: We avoid forcing restrictive client combinations like "player_client=mweb,web" which break
+  // when YouTube alters web formats. We allow yt-dlp's default client hierarchy to find valid streams.
   const tiers = [
     {
-      name: 'yt-dlp Tier 1 (Node JS Runtime & iOS/MWeb/Web clients)',
+      name: 'yt-dlp Tier 1 (Standard with Node runtime)',
       args: [
         '--no-warnings',
         '--no-playlist',
-        '--format', 'bestaudio[ext=m4a]/bestaudio/best[height<=480]/best',
+        '-f', 'bestaudio[ext=m4a]/bestaudio/best',
         '--get-url',
         '--js-runtimes', 'node',
-        '--remote-components', 'ejs:github',
-        '--extractor-args', 'youtube:player_client=ios,mweb,web',
         ytUrl,
       ],
     },
     {
-      name: 'yt-dlp Tier 2 (Standard MWeb/Web clients)',
+      name: 'yt-dlp Tier 2 (Universal minimal)',
       args: [
         '--no-warnings',
         '--no-playlist',
-        '--format', 'bestaudio[ext=m4a]/bestaudio/best',
-        '--get-url',
-        '--extractor-args', 'youtube:player_client=mweb,web',
-        ytUrl,
-      ],
-    },
-    {
-      name: 'yt-dlp Tier 3 (Universal fallback)',
-      args: [
-        '--no-warnings',
-        '--no-playlist',
-        '--format', 'bestaudio/best',
+        '-f', 'bestaudio/best',
         '--get-url',
         ytUrl,
       ],
@@ -208,47 +231,91 @@ async function getStreamUrl(videoId) {
   let lastDiag = null;
 
   for (const tier of tiers) {
+    const elapsed = Date.now() - startTime;
+    if (elapsed >= TOTAL_EXTRACTION_TIMEOUT_MS - 3000) {
+      console.warn(`[Stream] Approaching total extraction deadline (${elapsed}ms). Skipping ${tier.name}.`);
+      break;
+    }
+
     try {
-      console.log(`[Stream] Attempting extraction with ${tier.name} for ${videoId}`);
-      const result = await executeYtDlp(YTDLP_PATH, tier.args, 35000);
+      console.log(`[Stream] Executing ${tier.name} for ${videoId}`);
+      const remainingTime = Math.max(3000, TOTAL_EXTRACTION_TIMEOUT_MS - (Date.now() - startTime));
+      const attemptTimeout = Math.min(SINGLE_EXECUTION_TIMEOUT_MS, remainingTime);
+
+      const result = await executeYtDlp(YTDLP_PATH, tier.args, attemptTimeout);
       const lines = result.stdout.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
       const url = lines.find(l => l.startsWith('http://') || l.startsWith('https://'));
       if (url) {
-        console.log(`[Stream] Extraction successful with ${tier.name} for ${videoId}`);
+        console.log(`[Stream] Success with ${tier.name} for ${videoId}`);
         streamUrlCache.set(videoId, { url, expires: Date.now() + 90 * 60 * 1000 });
         return url;
       }
     } catch (diag) {
       lastDiag = diag;
-      console.warn(`[Stream Diagnostic] ${tier.name} failed for ${videoId}:`);
-      console.warn(`  - Executable: ${diag.executable}`);
-      console.warn(`  - Exit Code: ${diag.code} | Signal: ${diag.signal || 'none'} | TimedOut: ${diag.timedOut}`);
-      console.warn(`  - Error Message: ${diag.sanitizedMessage}`);
-      if (diag.sanitizedStderr) {
-        console.warn(`  - Captured Stderr: ${diag.sanitizedStderr}`);
+      const combinedErrMsg = `${diag.sanitizedMessage} ${diag.sanitizedStderr}`;
+
+      // Check for rate limit / bot detection: TRIP CIRCUIT BREAKER & STOP
+      if (isRateLimitError(combinedErrMsg)) {
+        upstreamRateLimitUntil = Date.now() + 60000;
+        console.error(`[Stream CircuitBreaker] YouTube rate-limiting / bot-check detected during ${tier.name}. Tripping circuit breaker for 60s.`);
+        const err = new Error('YouTube rate-limit reached (HTTP 429). Upstream datacenter IP throttled.');
+        err.status = 429;
+        throw err;
       }
-      if (diag.sanitizedStdout) {
-        console.warn(`  - Captured Stdout: ${diag.sanitizedStdout}`);
+
+      // Check for unavailable / copyright / private video: STOP
+      if (isUnavailableError(combinedErrMsg)) {
+        console.warn(`[Stream] Video ${videoId} is confirmed unavailable on YouTube.`);
+        const err = new Error(`Video ${videoId} is unavailable on YouTube.`);
+        err.status = 404;
+        throw err;
+      }
+
+      console.warn(`[Stream Diagnostic] ${tier.name} failed for ${videoId}:`);
+      console.warn(`  - Exit Code: ${diag.code} | Signal: ${diag.signal || 'none'} | TimedOut: ${diag.timedOut}`);
+      if (diag.sanitizedStderr) {
+        console.warn(`  - Stderr: ${diag.sanitizedStderr}`);
       }
     }
   }
 
-  // Tier 4: Pure Node.js fallback via play-dl
-  try {
-    console.log(`[Stream] Attempting Tier 4 Node fallback (play-dl) for ${videoId}`);
-    const playdl = require('play-dl');
-    const info = await playdl.video_info(ytUrl);
-    const formats = info.format || [];
-    const audioFmt = formats.find(f => f.mimeType && f.mimeType.startsWith('audio/mp4')) ||
-                     formats.find(f => f.mimeType && f.mimeType.startsWith('audio/')) ||
-                     formats.find(f => f.url && f.audio_channels);
-    if (audioFmt && audioFmt.url) {
-      console.log(`[Stream] Tier 4 (play-dl) extraction successful for ${videoId}`);
-      streamUrlCache.set(videoId, { url: audioFmt.url, expires: Date.now() + 90 * 60 * 1000 });
-      return audioFmt.url;
+  // Tier 3: Pure Node.js fallback via play-dl
+  // ONLY attempted if:
+  // 1. We are NOT rate-limited.
+  // 2. The previous errors were NOT rate-limits or unavailable videos.
+  // 3. We still have budget within the total extraction timeout.
+  const elapsedBeforeNode = Date.now() - startTime;
+  if (upstreamRateLimitUntil <= Date.now() && elapsedBeforeNode < TOTAL_EXTRACTION_TIMEOUT_MS - 3500) {
+    try {
+      console.log(`[Stream] Attempting Tier 3 Node fallback (play-dl) for ${videoId}`);
+      const playdl = require('play-dl');
+
+      const playPromise = playdl.video_info(ytUrl);
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('play-dl extraction timeout')), 3500)
+      );
+
+      const info = await Promise.race([playPromise, timeoutPromise]);
+      const formats = info.format || [];
+      const audioFmt = formats.find(f => f.mimeType && f.mimeType.startsWith('audio/mp4')) ||
+                       formats.find(f => f.mimeType && f.mimeType.startsWith('audio/')) ||
+                       formats.find(f => f.url && f.audio_channels);
+
+      if (audioFmt && audioFmt.url) {
+        console.log(`[Stream] Tier 3 (play-dl) successful for ${videoId}`);
+        streamUrlCache.set(videoId, { url: audioFmt.url, expires: Date.now() + 90 * 60 * 1000 });
+        return audioFmt.url;
+      }
+    } catch (nodeErr) {
+      if (isRateLimitError(nodeErr.message)) {
+        upstreamRateLimitUntil = Date.now() + 60000;
+        console.error(`[Stream CircuitBreaker] play-dl reported 429. Tripping circuit breaker for 60s.`);
+        const err = new Error('YouTube rate-limit reached (HTTP 429).');
+        err.status = 429;
+        throw err;
+      }
+      console.warn(`[Stream Diagnostic] Tier 3 play-dl fallback failed: ${sanitizeDiagnosticText(nodeErr.message)}`);
     }
-  } catch (nodeErr) {
-    console.warn(`[Stream Diagnostic] Tier 4 Node fallback failed: ${sanitizeDiagnosticText(nodeErr.message)}`);
   }
 
   const finalError = new Error(
@@ -256,11 +323,67 @@ async function getStreamUrl(videoId) {
       lastDiag && lastDiag.sanitizedStderr ? lastDiag.sanitizedStderr : (lastDiag?.sanitizedMessage || 'All extraction tiers exhausted.')
     }`
   );
+  finalError.status = 502;
   finalError.diagnostic = lastDiag;
   throw finalError;
 }
 
-// Global process error safety handlers
+/**
+ * Public getStreamUrl with cache check and singleflight request deduplication.
+ */
+function getStreamUrl(videoId) {
+  if (!VIDEO_ID_REGEX.test(videoId)) {
+    const badIdErr = new Error(`Invalid YouTube video ID format: ${videoId}`);
+    badIdErr.status = 400;
+    return Promise.reject(badIdErr);
+  }
+
+  // 1. Check in-memory URL cache (TTL 90m)
+  const cached = streamUrlCache.get(videoId);
+  if (cached && cached.expires > Date.now()) {
+    return Promise.resolve(cached.url);
+  }
+
+  // 2. Check in-flight extraction promise (Singleflight deduplication)
+  if (inFlightExtractions.has(videoId)) {
+    console.log(`[Stream Singleflight] Deduplicating request for ${videoId}`);
+    return inFlightExtractions.get(videoId);
+  }
+
+  // 3. Initiate single extraction and cache the promise while running
+  const extractionPromise = extractStreamUrlInternal(videoId).finally(() => {
+    inFlightExtractions.delete(videoId);
+  });
+
+  inFlightExtractions.set(videoId, extractionPromise);
+  return extractionPromise;
+}
+
+function getStreamUrl(videoId) {
+  if (!VIDEO_ID_REGEX.test(videoId)) {
+    const badIdErr = new Error(`Invalid YouTube video ID format: ${videoId}`);
+    badIdErr.status = 400;
+    return Promise.reject(badIdErr);
+  }
+
+  const cached = streamUrlCache.get(videoId);
+  if (cached && cached.expires > Date.now()) {
+    return Promise.resolve(cached.url);
+  }
+
+  if (inFlightExtractions.has(videoId)) {
+    console.log(`[Stream Singleflight] Deduplicating request for ${videoId}`);
+    return inFlightExtractions.get(videoId);
+  }
+
+  const extractionPromise = extractStreamUrlInternal(videoId).finally(() => {
+    inFlightExtractions.delete(videoId);
+  });
+
+  inFlightExtractions.set(videoId, extractionPromise);
+  return extractionPromise;
+}
+
 process.on('unhandledRejection', (reason, promise) => {
   console.error('[Process Error] Unhandled Rejection at:', promise, 'reason:', sanitizeDiagnosticText(reason));
 });
@@ -291,38 +414,40 @@ const ytmusic = new YTMusic();
 let initialized = false;
 ytmusic.initialize().then(() => initialized = true).catch(console.error);
 
-// Helper to handle and log upstream errors safely
 const handleUpstreamError = (res, err, endpoint) => {
   if (res.headersSent) {
     return;
   }
   const errMsg = err.message || err.toString();
-  let status = 500;
+  let status = err.status || 500;
 
-  if (errMsg.includes('429') || errMsg.includes('Too Many Requests')) {
+  if (isRateLimitError(errMsg)) {
     status = 429;
+  } else if (isUnavailableError(errMsg)) {
+    status = 404;
   } else if (errMsg.includes('403') || errMsg.includes('Forbidden')) {
     status = 403;
-  } else if (errMsg.includes('404') || errMsg.includes('Not Found')) {
-    status = 404;
-  } else if (errMsg.includes('timeout') || errMsg.includes('ECONNRESET') || errMsg.includes('ETIMEDOUT')) {
+  } else if (errMsg.includes('timeout') || errMsg.includes('ECONNRESET') || errMsg.includes('ETIMEDOUT') || errMsg.includes('504')) {
     status = 504;
   } else if (errMsg.includes('400') || errMsg.includes('Invalid')) {
     status = 400;
-  } else if (errMsg.includes('401')) {
-    status = 401;
   }
 
   console.error(`[Upstream Error] ${new Date().toISOString()} | Endpoint: ${endpoint} | Status: ${status} | Error: ${sanitizeDiagnosticText(errMsg)}`);
 
   res.status(status).json({
-    error: "Streaming service error",
+    error: status === 429
+      ? "YouTube rate-limited or requires verification. Datacenter IP throttled."
+      : status === 404
+      ? "Audio track is unavailable or removed."
+      : status === 504
+      ? "Streaming upstream timed out."
+      : "Streaming service error",
     status,
     message: sanitizeDiagnosticText(errMsg)
   });
 };
 
-// Health check
 app.get('/', (req, res) => res.send('Soundify Backend Running!'));
 
 app.get('/api/health', (req, res) => {
@@ -331,11 +456,11 @@ app.get('/api/health', (req, res) => {
     status: db ? "ok" : "degraded",
     service: "wavex-api",
     database: db ? "connected" : "disconnected",
-    uptime: process.uptime()
+    uptime: process.uptime(),
+    rateLimited: upstreamRateLimitUntil > Date.now(),
   });
 });
 
-// Search Route
 app.get('/api/search', async (req, res) => {
   const query = req.query.q;
   if (!query) return res.status(400).json({ error: "Missing query parameter" });
@@ -384,7 +509,6 @@ app.get('/api/search', async (req, res) => {
   }
 });
 
-// Track Details Route
 app.get('/api/track', async (req, res) => {
   const id = req.query.id;
   if (!id) return res.status(400).json({ error: "Missing id parameter" });
@@ -431,9 +555,6 @@ app.get('/api/track', async (req, res) => {
   }
 });
 
-/**
- * Build request headers for forwarding to YouTube CDN
- */
 function buildCdnHeaders(req) {
   const headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -449,7 +570,6 @@ function buildCdnHeaders(req) {
   return headers;
 }
 
-// Dedicated HEAD endpoint for /api/stream
 app.head('/api/stream', async (req, res) => {
   const videoId = req.query.videoId;
   if (!videoId || !VIDEO_ID_REGEX.test(videoId)) {
@@ -463,7 +583,6 @@ app.head('/api/stream', async (req, res) => {
       headers: buildCdnHeaders(req),
     });
 
-    // If 403, retry once with freshly extracted URL
     if (upstreamResp.statusCode === 403) {
       streamUrlCache.delete(videoId);
       audioUrl = await getStreamUrl(videoId);
@@ -500,12 +619,12 @@ app.head('/api/stream', async (req, res) => {
     res.status(upstreamResp.statusCode).end();
   } catch (err) {
     if (!res.headersSent) {
-      res.status(500).end();
+      const status = err.status || 500;
+      res.status(status).end();
     }
   }
 });
 
-// Audio Stream Route — proxies audio bytes with range support
 app.get('/api/stream', async (req, res) => {
   const videoId = req.query.videoId;
   if (!videoId || !VIDEO_ID_REGEX.test(videoId)) {
@@ -519,8 +638,6 @@ app.get('/api/stream', async (req, res) => {
       headers: buildCdnHeaders(req),
     });
 
-    // If upstream returns 403 Forbidden, the signed URL may have expired.
-    // Invalidate the cache and retry once with fresh extraction.
     if (upstreamResp.statusCode === 403) {
       console.warn(`[Stream] Upstream returned 403 for ${videoId}. Invalidating cache and retrying extraction...`);
       streamUrlCache.delete(videoId);
@@ -531,7 +648,6 @@ app.get('/api/stream', async (req, res) => {
       });
     }
 
-    // If upstream returned an error code, do not stream it as valid audio
     if (upstreamResp.statusCode >= 400) {
       if (upstreamResp.body && typeof upstreamResp.body.destroy === 'function') {
         upstreamResp.body.destroy();
@@ -554,7 +670,6 @@ app.get('/api/stream', async (req, res) => {
 
     res.status(upstreamResp.statusCode);
 
-    // Clean up upstream connection when client disconnects or aborts
     const clientAbortHandler = () => {
       if (upstreamResp.body && typeof upstreamResp.body.destroy === 'function') {
         upstreamResp.body.destroy();
@@ -580,7 +695,6 @@ app.get('/api/stream', async (req, res) => {
   }
 });
 
-// Download Route — forces download with explicit filename
 app.get('/api/download', async (req, res) => {
   const videoId = req.query.videoId;
   const title = req.query.title || 'WaveX Track';
@@ -650,5 +764,4 @@ app.listen(PORT, () => {
   connectDB().catch(console.error);
 });
 
-module.exports = { app, resolveYtDlp, getStreamUrl, sanitizeDiagnosticText };
-
+module.exports = { app, resolveYtDlp, getStreamUrl, sanitizeDiagnosticText, isRateLimitError, isUnavailableError };

@@ -4,13 +4,18 @@ import path from 'path';
 
 const globalWithCache = global as typeof globalThis & {
   _streamUrlCache?: Map<string, { url: string; expires: number }>;
+  _inFlightExtractions?: Map<string, Promise<string>>;
 };
 
 if (!globalWithCache._streamUrlCache) {
   globalWithCache._streamUrlCache = new Map();
 }
+if (!globalWithCache._inFlightExtractions) {
+  globalWithCache._inFlightExtractions = new Map();
+}
 
 const streamUrlCache = globalWithCache._streamUrlCache;
+const inFlightExtractions = globalWithCache._inFlightExtractions;
 
 export function invalidateStreamUrl(videoId: string): void {
   streamUrlCache.delete(videoId);
@@ -20,75 +25,63 @@ export function clearStreamUrlCache(): void {
   streamUrlCache.clear();
 }
 
-// Clear any stale cached URLs on module reload
-clearStreamUrlCache();
-
 export interface YtDlpCommand {
   executable: string;
   prefixArgs: string[];
 }
 
 export function resolveYtDlp(): YtDlpCommand {
-  const localAppData = process.env.LOCALAPPDATA || 'C:\\Users\\Kaivalya\\AppData\\Local';
-  const appData = process.env.APPDATA || 'C:\\Users\\Kaivalya\\AppData\\Roaming';
-  const userProfile = process.env.USERPROFILE || 'C:\\Users\\Kaivalya';
+  const isWindows = process.platform === 'win32';
+  const customPath = process.env.YTDLP_PATH ? process.env.YTDLP_PATH.replace(/^["']|["']$/g, '').trim() : '';
 
-  // 1. Direct path from environment
-  if (process.env.YTDLP_PATH) {
-    const p = process.env.YTDLP_PATH.replace(/^["']|["']$/g, '').trim();
-    if (p && fs.existsSync(p)) {
-      return { executable: p, prefixArgs: [] };
+  if (customPath) {
+    if (!isWindows && (/^[a-zA-Z]:[\\/]/.test(customPath) || customPath.includes('\\'))) {
+      // Ignore Windows paths on non-Windows environments
+    } else if (fs.existsSync(customPath)) {
+      return { executable: customPath, prefixArgs: [] };
+    } else if (!customPath.includes('/') && !customPath.includes('\\')) {
+      return { executable: customPath, prefixArgs: [] };
     }
   }
 
-  // 2. Common Windows python script locations for yt-dlp.exe
-  const candidateExecutables = [
-    'C:\\Users\\Kaivalya\\AppData\\Local\\Python\\pythoncore-3.14-64\\Scripts\\yt-dlp.exe',
-    path.join(localAppData, 'Python', 'pythoncore-3.14-64', 'Scripts', 'yt-dlp.exe'),
-    path.join(localAppData, 'Programs', 'Python', 'Python312', 'Scripts', 'yt-dlp.exe'),
-    path.join(localAppData, 'Programs', 'Python', 'Python311', 'Scripts', 'yt-dlp.exe'),
-    path.join(localAppData, 'Programs', 'Python', 'Python310', 'Scripts', 'yt-dlp.exe'),
-    path.join(appData, 'Python', 'Scripts', 'yt-dlp.exe'),
-    path.join(userProfile, 'AppData', 'Roaming', 'Python', 'Python312', 'Scripts', 'yt-dlp.exe'),
-    path.join(userProfile, 'AppData', 'Roaming', 'Python', 'Python311', 'Scripts', 'yt-dlp.exe'),
-    path.join(userProfile, 'AppData', 'Roaming', 'Python', 'Python310', 'Scripts', 'yt-dlp.exe'),
-    path.join(localAppData, 'Microsoft', 'WindowsApps', 'yt-dlp.exe'),
-  ];
+  const candidateExecutables = isWindows
+    ? [
+        path.join(process.env.LOCALAPPDATA || '', 'Python', 'pythoncore-3.14-64', 'Scripts', 'yt-dlp.exe'),
+        path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python312', 'Scripts', 'yt-dlp.exe'),
+        path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python311', 'Scripts', 'yt-dlp.exe'),
+        path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python310', 'Scripts', 'yt-dlp.exe'),
+        path.join(process.env.APPDATA || '', 'Python', 'Scripts', 'yt-dlp.exe'),
+      ]
+    : [
+        '/usr/local/bin/yt-dlp',
+        '/usr/bin/yt-dlp',
+        '/opt/render/.local/bin/yt-dlp',
+        path.join(process.env.HOME || '', '.local', 'bin', 'yt-dlp'),
+      ];
 
   for (const candidate of candidateExecutables) {
     try {
-      if (fs.existsSync(candidate)) {
+      if (candidate && fs.existsSync(candidate)) {
         return { executable: candidate, prefixArgs: [] };
       }
     } catch {
-      // ignore permission error during existence check and proceed
+      // ignore existence error
     }
   }
 
-  // 3. Fallback: run via Python module if python.exe exists
-  const pythonBin = path.join(localAppData, 'Python', 'bin', 'python.exe');
-  try {
-    if (fs.existsSync(pythonBin)) {
-      return { executable: pythonBin, prefixArgs: ['-m', 'yt_dlp'] };
-    }
-  } catch {
-    // ignore
-  }
-
-  // 4. Default to standard command in system PATH or configured env path
-  const fallbackPath = process.env.YTDLP_PATH?.replace(/^["']|["']$/g, '').trim() || 'yt-dlp';
+  const fallbackPath = !isWindows && customPath && customPath.includes('\\') ? 'yt-dlp' : (customPath || 'yt-dlp');
   return { executable: fallbackPath, prefixArgs: [] };
 }
 
-function executeYtDlp(executable: string, args: string[]): Promise<string> {
+function executeYtDlp(executable: string, args: string[], timeoutMs = 8000): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile(executable, args, { timeout: 25000 }, (err, stdout, stderr) => {
+    execFile(executable, args, { timeout: timeoutMs, maxBuffer: 5 * 1024 * 1024 }, (err, stdout, stderr) => {
       if (err) {
         const errorText = (stderr || err.message || '').trim();
         return reject(new Error(errorText));
       }
       const lines = stdout.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-      const url = lines.find(l => l.startsWith('http'));
+      const url = lines.find(l => l.startsWith('http://') || l.startsWith('https://'));
       if (!url) {
         return reject(new Error('Invalid URL in yt-dlp output: ' + stdout.substring(0, 100)));
       }
@@ -97,73 +90,71 @@ function executeYtDlp(executable: string, args: string[]): Promise<string> {
   });
 }
 
-export async function getStreamUrl(videoId: string): Promise<string> {
-  if (!videoId || typeof videoId !== 'string') {
-    throw new Error('TRACK_UNAVAILABLE: Empty or invalid track ID');
-  }
-
-  const cached = streamUrlCache.get(videoId);
-  if (cached && cached.expires > Date.now()) {
-    return cached.url;
-  }
-
+async function extractStreamUrlInternal(videoId: string): Promise<string> {
   const { executable, prefixArgs } = resolveYtDlp();
   const ytUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
-  // Priority 1: Android client + pure audio formats (AAC itag 140 or Opus itag 251)
-  // The Android client bypasses web PO token challenges and returns direct playable audio streams
+  // Tier 1: Modern yt-dlp with Node JS runtime and default client hierarchy
   const tier1Args = [
     ...prefixArgs,
-    '--extractor-args', 'youtube:player_client=android,web',
-    '--format', 'ba[ext=m4a]/ba[ext=webm]/ba/b[acodec!=none]',
-    '--get-url',
-    '--no-playlist',
     '--no-warnings',
-    '--quiet',
+    '--no-playlist',
+    '-f', 'bestaudio[ext=m4a]/bestaudio/best',
+    '--get-url',
+    '--js-runtimes', 'node',
     ytUrl,
   ];
 
   try {
-    const url = await executeYtDlp(executable, tier1Args);
+    const url = await executeYtDlp(executable, tier1Args, 6000);
     streamUrlCache.set(videoId, { url, expires: Date.now() + 90 * 60 * 1000 });
     return url;
   } catch (err: any) {
-    const msg = err?.message || '';
+    const msg = String(err?.message || '').toLowerCase();
 
-    if (msg.includes('This video is unavailable') || msg.includes('Private video') || msg.includes('Video unavailable')) {
+    if (msg.includes('unavailable') || msg.includes('private video')) {
       throw new Error(`TRACK_UNAVAILABLE: Video ${videoId} is unavailable on YouTube`);
     }
+    if (msg.includes('429') || msg.includes('too many requests') || msg.includes('confirm you\'re not a bot')) {
+      throw new Error(`RATE_LIMITED: YouTube rate-limiting active (HTTP 429)`);
+    }
 
-    // Priority 2: Standard client with --js-runtimes node, strictly enforcing audio codec
+    // Tier 2: Universal minimal fallback
     const tier2Args = [
       ...prefixArgs,
-      '--js-runtimes', 'node',
-      '--format', 'ba[ext=m4a]/ba[ext=webm]/ba/b[acodec!=none]',
-      '--get-url',
-      '--no-playlist',
       '--no-warnings',
-      '--quiet',
+      '--no-playlist',
+      '-f', 'bestaudio/best',
+      '--get-url',
       ytUrl,
     ];
 
-    try {
-      const url = await executeYtDlp(executable, tier2Args);
-      streamUrlCache.set(videoId, { url, expires: Date.now() + 90 * 60 * 1000 });
-      return url;
-    } catch (err2: any) {
-      // Priority 3: Fallback without special flags, strictly requiring non-empty audio codec
-      const tier3Args = [
-        ...prefixArgs,
-        '-f', 'bestaudio[acodec!=none]/best[acodec!=none]',
-        '--get-url',
-        '--no-playlist',
-        '--no-warnings',
-        '--quiet',
-        ytUrl,
-      ];
-      const url = await executeYtDlp(executable, tier3Args);
-      streamUrlCache.set(videoId, { url, expires: Date.now() + 90 * 60 * 1000 });
-      return url;
-    }
+    const url = await executeYtDlp(executable, tier2Args, 5000);
+    streamUrlCache.set(videoId, { url, expires: Date.now() + 90 * 60 * 1000 });
+    return url;
   }
 }
+
+export function getStreamUrl(videoId: string): Promise<string> {
+  if (!videoId || typeof videoId !== 'string' || !/^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
+    return Promise.reject(new Error('TRACK_UNAVAILABLE: Empty or invalid track ID'));
+  }
+
+  const cached = streamUrlCache.get(videoId);
+  if (cached && cached.expires > Date.now()) {
+    return Promise.resolve(cached.url);
+  }
+
+  if (inFlightExtractions.has(videoId)) {
+    return inFlightExtractions.get(videoId)!;
+  }
+
+  const extractionPromise = extractStreamUrlInternal(videoId).finally(() => {
+    inFlightExtractions.delete(videoId);
+  });
+
+  inFlightExtractions.set(videoId, extractionPromise);
+  return extractionPromise;
+}
+
+
