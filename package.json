@@ -1,34 +1,29 @@
 {
-  "name": "wavex",
-  "private": true,
+  "name": "server",
   "version": "1.0.0",
-  "type": "module",
+  "description": "",
+  "main": "index.js",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build --webpack",
-    "start": "next start",
-    "lint": "eslint ."
+    "start": "node index.js",
+    "postinstall": "python3 -m pip install --no-cache-dir --upgrade --pre \"yt-dlp[default]\"",
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
   "dependencies": {
-    "@capacitor/android": "^8.3.1",
-    "@capacitor/cli": "^8.3.1",
-    "@capacitor/core": "^8.3.1",
+    "@distube/ytdl-core": "^4.16.12",
+    "cors": "^2.8.6",
     "dotenv": "^18.0.3",
-    "firebase": "^12.11.0",
-    "lucide-react": "^1.7.0",
+    "express": "^5.2.1",
     "mongodb": "^7.6.0",
-    "next": "^16.4.2",
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4",
-    "undici": "^7.0.0",
-    "ytmusic-api": "^5.3.1"
-  },
-  "devDependencies": {
-    "@eslint/js": "^9.39.4",
-    "@types/node": "^22.0.0",
-    "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3",
-    "eslint": "^9.39.4",
-    "typescript": "7.0.2"
+    "play-dl": "^1.9.7",
+    "youtube-ext": "^1.1.25",
+    "yt-search": "^2.13.1",
+    "yt-stream": "^1.7.4",
+    "ytdl-core-enhanced": "^2.3.0",
+    "ytmusic-api": "^5.3.1",
+    "undici": "^7.24.6"
   }
 }
